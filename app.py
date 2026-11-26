@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta
 import re
 import psycopg2
@@ -5,7 +6,7 @@ from psycopg2.extras import RealDictCursor
 from flask import Flask, render_template_string, request, redirect, url_for, session
 
 app = Flask(__name__)
-app.secret_key = "clave-demo-distribuida-2026"
+app.secret_key = os.environ.get("SECRET_KEY", "clave-demo-distribuida-2026")
 
 # ======================= SIMULACION DE CAIDA DE NODOS Y LOGS =======================
 ESTADO_NODOS = {"central": True, "bogota": True, "manizales": True, "cartagena": True}  # True = activo
@@ -36,9 +37,9 @@ def registrar_evento(categoria, origen, destino, detalle, modo="NORMAL"):
     print(f"[{entrada['hora']}] [{categoria}] [{modo}] {origen} -> {destino}: {detalle}")
 
 
-DB_HOST = "localhost"
-DB_PORT = 5432
-DB_NAME = "tienda_distribuida"
+DB_HOST = os.environ.get("DB_HOST", "localhost")
+DB_PORT = int(os.environ.get("DB_PORT", 5432))
+DB_NAME = os.environ.get("DB_NAME", "tienda_distribuida")
 
 ESTADOS_VENTA = ["PENDIENTE", "EN_PROCESO", "COMPLETADA", "ENTREGADA", "CANCELADA", "DEVUELTA"]
 
@@ -183,7 +184,7 @@ ROLES_CONFIG = {
     },
 }
 
-HTML_LOGIN = """
+HTML_LOGIN = r"""
 <!doctype html>
 <html lang="es">
 <head>
@@ -221,7 +222,7 @@ HTML_LOGIN = """
 </html>
 """
 
-HTML_PANEL = """
+HTML_PANEL = r"""
 <!doctype html>
 <html lang="es">
 <head>
@@ -1527,14 +1528,17 @@ HTML_PANEL = """
 
 def get_conn(rol_key):
     cfg = ROLES_CONFIG[rol_key]
-    return psycopg2.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        dbname=DB_NAME,
-        user=cfg["db_user"],
-        password=cfg["db_pass"],
-        cursor_factory=RealDictCursor,
-    )
+    conn_kwargs = {
+        "host": DB_HOST,
+        "port": DB_PORT,
+        "dbname": DB_NAME,
+        "user": cfg["db_user"],
+        "password": cfg["db_pass"],
+        "cursor_factory": RealDictCursor,
+    }
+    if DB_HOST not in ("localhost", "127.0.0.1"):
+        conn_kwargs["sslmode"] = "require"
+    return psycopg2.connect(**conn_kwargs)
 
 
 def es_consulta_segura(sql_raw):
@@ -1757,7 +1761,6 @@ def panel():
     if region not in ("bogota", "manizales", "cartagena"):
         region = "bogota"
 
-    # Se mantiene en la región solicitada incluso si está caída (contingencia local)
     factura_seleccionada = request.args.get("factura_id")
     venta_seleccionada = request.args.get("venta_id")
     msg = request.args.get("msg")
@@ -2720,4 +2723,5 @@ def editar_empleado():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
